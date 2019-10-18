@@ -37,18 +37,15 @@ def extractFileName(name):
 
 if __name__ == "__main__":
     parser = ArgumentParser(prog=str(__file__))
-    parser.add_argument('--name', '-n', dest='name', help='Process name for binding after searching.')
-    parser.add_argument('--pid', '-p', dest='pid', help='Process id (PID) for direct binding.', type=int)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--name', '-n', dest='name', help='Process name for binding after searching.')
+    group.add_argument('--pid', '-p', dest='pid', help='Process id (PID) for direct binding.', type=int)
     interval = 1.0
     parser.add_argument('--interval', '-i', default=interval, dest='interval', help='Interval (sec.) for monitoring. default: {} sec.'.format(interval), type=float)
     parser.add_argument('--dump', '-d', action="store_true", 
         help='dump metrics to file or not. filename syntax is: monitor-ProcName[_ProcName[_ProcName ...]].csv default: false')
     argv = parser.parse_args()
 
-    if not argv.pid and not argv.name:
-        print("need PID or process name for binding.")
-        sys.exit(1)
-    
     tmp_pid = int(argv.pid) if argv.pid else None
     if tmp_pid != None and not psutil.pid_exists(tmp_pid):
         print("not found PID in system by given {}".format(tmp_pid))
