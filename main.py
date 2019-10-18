@@ -32,22 +32,19 @@ def extractFileName(name):
 
 if __name__ == "__main__":
     parser = ArgumentParser(prog=str(__file__))
-    parser.add_argument('--name', '-n', dest='name', help='Process name for binding after searching.')
-    parser.add_argument('--pid', '-p', dest='pid', help='Process id (PID) for direct binding.')
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--name', '-n', dest='name', help='Process name for binding after searching.')
+    group.add_argument('--pid', '-p', dest='pid', type=int, help='Process id (PID) for direct binding.')
     interval = 0.5
-    parser.add_argument('--interval', '-i', default=interval, dest='interval', help='Interval (sec.) for monitoring. default: {} sec.'.format(interval))
+    parser.add_argument('--interval', '-i', default=interval, type=float, dest='interval', help='Interval (sec.) for monitoring. default: {} sec.'.format(interval))
     argv = parser.parse_args()
 
-    if not argv.pid and not argv.name:
-        print("need PID or process name for binding.")
-        sys.exit(1)
     pid = argv.pid or find_pid(argv.name)
-    if pid == None or not psutil.pid_exists(int(pid)):
+    if pid == None or not psutil.pid_exists(pid):
         if argv.name: print("not match any process name by given '{}'".format(argv.name))
         else: print("not found PID in system by given {}".format(pid))
         print("(On Ubuntu) please use 'ps aux | grep -i {}' to check your process is running.".format(argv.name))
         sys.exit(1)
-    pid = int(pid)
     interval = argv.interval
     p = psutil.Process(pid)
     name = p.name()
