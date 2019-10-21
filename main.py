@@ -7,6 +7,7 @@ from datetime import datetime
 from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor
 from collections import OrderedDict
+import threading
 
 def bytes2MiB(b):
     b = b / 1024.0 / 1024.0
@@ -35,60 +36,130 @@ def extractFileName(name):
     name = os.path.splitext(name)[0]
     return name.lower()
 
+
+def monitor_system(interval=1):
+    ts = round(time.time(), 1)
+    mem = psutil.virtual_memory()
+    swap = psutil.swap_memory()
+    metrics = [
+        ("ts", ts),
+        ("mem_total", mem.total),
+        ("mem_available", mem.available),
+        ("mem_used", mem.used),
+        ("mem_free", mem.free),
+        ("swap_total", swap.total),
+        ("swap_used", swap.used),
+        ("swap_free", swap.free),
+        ("swap_percent", swap.percent),
+    ]
+    metrics = [ (name, bytes2MiB(byte)) for (name, byte) in metrics ]
+
+    cpus = psutil.cpu_percent(percpu=True, interval=interval)
+    metrics = metrics + [ 
+        (f"cpu_{idx}", cpu)
+        for idx, cpu in enumerate(cpus)]
+    return OrderedDict(metrics)
+
+class SystemMonitor(object):
+    def __init__(self, dump=False):
+        self.writer = None
+        self.dump = dump
+        if self.dump:
+            self.filename = "monitor-system.csv"
+            self.isNeedInit = not os.path.isfile(self.filename)
+            self.fout = open(self.filename, 'a', newline='') if dump else None 
+
+    def _append2file(self, results):
+        if self.dump:
+            if self.writer == None:
+                self.writer = csv.DictWriter(self.fout, fieldnames=list(results[0].keys()))
+                if self.isNeedInit:
+                    self.writer.writeheader()
+            if self.writer:
+                self.writer.writerows(results)
+
+    def start(self, interval=1):
+        while True:
+            result = monitor_system(interval)
+            print(result)
+            print("================================")
+            self._append2file([result])
+
+class ProcessMonitor(object):
+    def __init__(self, pid=None, proc_name=None, dump=False):        
+        if pid != None and not psutil.pid_exists(pid):
+            raise KeyError("not found PID in system (given: {})".format(pid))        
+        
+        pids = [ pid ] if pid else find_pid(proc_name)
+        
+        if not pids: 
+            raise KeyError("not match any process name by given '{}'".format(proc_name))
+        
+        self.procs = [ psutil.Process(pid) for pid in pids ]
+
+        process_name_set = set()
+        for idx, p in enumerate(self.procs):
+            process_name_set.add(p.name())
+            print("({}/{}) Find the PID of '{}' (pattern: {}) is {}".format(idx+1, len(self.procs), p.name(), proc_name, p.pid))
+    
+        self.executor = ThreadPoolExecutor(max_workers=len(self.procs))        
+
+        self.filename = None
+        self.isNeedInit = None
+        self.fout = None
+        self.dump = dump
+        self.writer = None
+        if self.dump:
+            self.filename = "monitor-{}.csv".format("_".join(set(extractFileName(pname) for pname in process_name_set)))
+            self.isNeedInit = not os.path.isfile(self.filename)
+            self.fout = open(self.filename, 'a', newline='') if dump else None    
+
+    def _append2file(self, results):
+        if self.dump:
+            if self.writer == None:
+                self.writer = csv.DictWriter(self.fout, fieldnames=list(results[0].keys()))
+                if self.isNeedInit:
+                    self.writer.writeheader()
+            if self.writer:
+                self.writer.writerows(results)
+
+    def start(self, interval):
+        while True:
+            future_to_pid = { self.executor.submit(monitor_process, p, interval): p.pid for p in self.procs }
+            results = []
+            for future in future_to_pid:
+                result = future.result()
+                results.append(result)
+                print("\t".join(map(str, result.values())))
+            print("\t".join(result))
+            print("======")
+            self._append2file(results)
+
+
 if __name__ == "__main__":
     parser = ArgumentParser(prog=str(__file__))
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--name', '-n', dest='name', help='Process name for binding after searching.')
     group.add_argument('--pid', '-p', dest='pid', help='Process id (PID) for direct binding.', type=int)
+    group.add_argument('--dump-system', '-s', action="store_true", 
+        help='dump system metrics or not. default: false')
     interval = 1.0
     parser.add_argument('--interval', '-i', default=interval, dest='interval', help='Interval (sec.) for monitoring. default: {} sec.'.format(interval), type=float)
     parser.add_argument('--dump', '-d', action="store_true", 
         help='dump metrics to file or not. filename syntax is: monitor-ProcName[_ProcName[_ProcName ...]].csv default: false')
+    
     argv = parser.parse_args()
-
-    tmp_pid = int(argv.pid) if argv.pid else None
-    if tmp_pid != None and not psutil.pid_exists(tmp_pid):
-        print("not found PID in system by given {}".format(tmp_pid))
-        sys.exit(1)
-    
-    pids = []
-    if tmp_pid: 
-        pids = [tmp_pid]
-    else: 
-        pids = find_pid(argv.name)
-    
-    if not pids: 
-        print("not match any process name by given '{}'".format(argv.name))
-        sys.exit(1)
-
-    procs = [ psutil.Process(pid) for pid in pids ]
-    process_name = set()
-    for idx, p in enumerate(procs):
-        process_name.add(p.name())
-        print("({}/{}) Find the PID of '{}' (pattern: {}) is {}".format(idx+1, len(procs), p.name(), argv.name, p.pid))
     interval = float(argv.interval)
-    
-    filename = "monitor-{}.csv".format("_".join(set(extractFileName(pname) for pname in process_name)))
-    isNeedInit = not os.path.isfile(filename)
 
-    executor = ThreadPoolExecutor(max_workers=len(procs))
-    fout = open(filename, 'a', newline='') if argv.dump else None    
-    writer = None
-    while(1):
-        future_to_pid = {executor.submit(monitor_process, p, interval): p.pid for p in procs}
-        results = []
-        for future in future_to_pid:
-            pid = future_to_pid[future]
-            result = future.result()
-            results.append(result)
-            print("\t".join(map(str, result.values())))
-        print("\t".join(result))
-        print("======")
-        if argv.dump:
-            if writer == None:
-                writer = csv.DictWriter(fout, fieldnames=list(result.keys()))
-                if isNeedInit:
-                    writer.writeheader()
-            if writer:
-                writer.writerows(results)
+    if argv.dump_system:
+        sm = SystemMonitor(dump=argv.dump)
+        sm.start(interval)
+    else:
+        pm = ProcessMonitor(pid=argv.pid, proc_name=argv.name, dump=argv.dump)
+        pm.start(interval)
+
+    
+
+
+    
             
