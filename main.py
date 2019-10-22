@@ -27,10 +27,10 @@ def monitor_process(p, interval):
 def find_pid(pattern):
     pattern = pattern.lower()
     groupPID = []
-    for proc in psutil.process_iter(attrs=['pid', 'name', 'exe']):
+    for proc in psutil.process_iter(attrs=['pid', 'name', 'cmdline']):
         proc_name = proc.info['name'] or ""
-        proc_exe = proc.info['exe'] or ""
-        if pattern in proc_name.lower() or pattern in proc_exe.lower():
+        proc_cmdline = " ".join(proc.info['cmdline'])
+        if pattern in proc_name.lower() or pattern in proc_cmdline.lower():
             groupPID.append(proc.info['pid'])
     return groupPID
 
@@ -89,21 +89,26 @@ class SystemMonitor(object):
             self._append2file([result])
 
 class ProcessMonitor(object):
-    def __init__(self, pid=None, proc_name=None, dump=False):        
-        if pid != None and not psutil.pid_exists(pid):
-            raise KeyError("not found PID in system (given: {})".format(pid))        
+    def __init__(self, pids=None, pattern=None, dump=False):        
+        if pids != None:
+            for pid in pids:
+                if not  psutil.pid_exists(pid):
+                    raise KeyError("not found PID in system (given: {})".format(pid))        
         
-        pids = [ pid ] if pid else find_pid(proc_name)
+        pids = pids if pids else find_pid(pattern)
         
         if not pids: 
-            raise KeyError("not match any process name by given '{}'".format(proc_name))
+            raise KeyError("not match any process name by given '{}'".format(pattern))
         
         self.procs = [ psutil.Process(pid) for pid in pids ]
 
         process_name_set = set()
         for idx, p in enumerate(self.procs):
             process_name_set.add(p.name())
-            print("({}/{}) Find the PID of '{}' (pattern: {}) is {}".format(idx+1, len(self.procs), p.name(), proc_name, p.pid))
+            p_pid = p.pid
+            p_name = p.name()
+            p_cmdline = " ".join(p.cmdline())
+            print("({}/{}) Find out th PID ({}) matched pattern. (cmdline: {})".format(idx+1, len(self.procs), p_pid, p_cmdline))
     
         self.executor = ThreadPoolExecutor(max_workers=len(self.procs))        
 
@@ -143,7 +148,7 @@ if __name__ == "__main__":
     parser = ArgumentParser(prog=str(__file__))
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--name', '-n', dest='name', help='Process name for binding after searching.')
-    group.add_argument('--pid', '-p', dest='pid', help='Process id (PID) for direct binding.', type=int)
+    group.add_argument('--pid', '-p', nargs='+', dest='pid', help='Process id (take 1 or more) for direct binding.', type=int)
     group.add_argument('--dump-system', '-s', action="store_true", 
         help='dump system metrics or not. default: false')
     interval = 1.0
@@ -152,13 +157,15 @@ if __name__ == "__main__":
         help='dump metrics to file or not. filename syntax is: monitor-ProcName[_ProcName[_ProcName ...]].csv default: false')
     
     argv = parser.parse_args()
+    # print(argv)
+    # sys.exit(0)
     interval = float(argv.interval)
 
     if argv.dump_system:
         sm = SystemMonitor(dump=argv.dump)
         sm.start(interval)
     else:
-        pm = ProcessMonitor(pid=argv.pid, proc_name=argv.name, dump=argv.dump)
+        pm = ProcessMonitor(pids=argv.pid, pattern=argv.name, dump=argv.dump)
         pm.start(interval)
 
     
