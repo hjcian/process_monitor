@@ -24,10 +24,13 @@ def monitor_process(p, interval):
         ("mem", bytes2MiB(mem.rss)),
     ])
 
-def find_pid(pname):
+def find_pid(pattern):
+    pattern = pattern.lower()
     groupPID = []
-    for proc in psutil.process_iter(attrs=['pid', 'name']):
-        if pname.lower() in proc.info['name'].lower():
+    for proc in psutil.process_iter(attrs=['pid', 'name', 'exe']):
+        proc_name = proc.info['name'] or ""
+        proc_exe = proc.info['exe'] or ""
+        if pattern in proc_name.lower() or pattern in proc_exe.lower():
             groupPID.append(proc.info['pid'])
     return groupPID
 
