@@ -46,17 +46,15 @@ def monitor_system(interval=1):
     swap = psutil.swap_memory()
     metrics = [
         ("ts", ts),
-        ("mem_total", mem.total),
-        ("mem_available", mem.available),
-        ("mem_used", mem.used),
-        ("mem_free", mem.free),
-        ("swap_total", swap.total),
-        ("swap_used", swap.used),
-        ("swap_free", swap.free),
-        ("swap_percent", swap.percent),
+        ("mem_total", bytes2MiB(mem.total)),
+        ("mem_available", bytes2MiB(mem.available)),
+        ("mem_used", bytes2MiB(mem.used)),
+        ("mem_free", bytes2MiB(mem.free)),
+        ("swap_total", bytes2MiB(swap.total)),
+        ("swap_used", bytes2MiB(swap.used)),
+        ("swap_free", bytes2MiB(swap.free)),
+        ("swap_percent", bytes2MiB(swap.percent)),
     ]
-    metrics = [ (name, bytes2MiB(byte)) for (name, byte) in metrics ]
-
     cpus = psutil.cpu_percent(percpu=True, interval=interval)
     metrics = metrics + [ 
         (f"cpu_{idx}", cpu)
