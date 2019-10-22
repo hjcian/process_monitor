@@ -64,11 +64,11 @@ def monitor_system(interval=1):
     return OrderedDict(metrics)
 
 class SystemMonitor(object):
-    def __init__(self, dump=False):
+    def __init__(self, dump=False, fname=None):
         self.writer = None
         self.dump = dump
         if self.dump:
-            self.filename = "monitor-system.csv"
+            self.filename = fname or "monitor-system.csv"
             self.isNeedInit = not os.path.isfile(self.filename)
             self.fout = open(self.filename, 'a', newline='') if dump else None 
 
@@ -89,7 +89,7 @@ class SystemMonitor(object):
             self._append2file([result])
 
 class ProcessMonitor(object):
-    def __init__(self, pids=None, pattern=None, dump=False):        
+    def __init__(self, pids=None, pattern=None, dump=False, fname=None):        
         if pids != None:
             for pid in pids:
                 if not  psutil.pid_exists(pid):
@@ -102,14 +102,15 @@ class ProcessMonitor(object):
         
         self.procs = [ psutil.Process(pid) for pid in pids ]
 
-        process_name_set = set()
-        for idx, p in enumerate(self.procs):
-            process_name_set.add(p.name())
+        filename_concate = []        
+        for idx, p in enumerate(self.procs):            
             p_pid = p.pid
             p_name = p.name()
+            filename_concate.append(f"{extractFileName(p_name)}-{p_pid}")
             p_cmdline = " ".join(p.cmdline())
             print("({}/{}) Find out th PID ({}) matched pattern. (cmdline: {})".format(idx+1, len(self.procs), p_pid, p_cmdline))
-    
+        filename_concate = "_".join(filename_concate)
+
         self.executor = ThreadPoolExecutor(max_workers=len(self.procs))        
 
         self.filename = None
@@ -118,7 +119,7 @@ class ProcessMonitor(object):
         self.dump = dump
         self.writer = None
         if self.dump:
-            self.filename = "monitor-{}.csv".format("_".join(set(extractFileName(pname) for pname in process_name_set)))
+            self.filename = fname or f"monitor_{pattern or 'EMPTY'}_{filename_concate}.csv"
             self.isNeedInit = not os.path.isfile(self.filename)
             self.fout = open(self.filename, 'a', newline='') if dump else None    
 
@@ -145,27 +146,28 @@ class ProcessMonitor(object):
 
 
 if __name__ == "__main__":
+    interval = 1.0
     parser = ArgumentParser(prog=str(__file__))
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--name', '-n', dest='name', help='Process name for binding after searching.')
     group.add_argument('--pid', '-p', nargs='+', dest='pid', help='Process id (take 1 or more) for direct binding.', type=int)
     group.add_argument('--dump-system', '-s', action="store_true", 
         help='dump system metrics or not. default: false')
-    interval = 1.0
-    parser.add_argument('--interval', '-i', default=interval, dest='interval', help='Interval (sec.) for monitoring. default: {} sec.'.format(interval), type=float)
+    # parser.add_argument('--interval', '-i', default=interval, dest='interval', help='Interval (sec.) for monitoring. default: {} sec.'.format(interval), type=float)
     parser.add_argument('--dump', '-d', action="store_true", 
-        help='dump metrics to file or not. filename syntax is: monitor-ProcName[_ProcName[_ProcName ...]].csv default: false')
-    
+        help='dump metrics to file or not. default: false')
+    parser.add_argument('--file-name', '-f', 
+        help='specify file name for storing dump file or use default syntax.')
     argv = parser.parse_args()
     # print(argv)
     # sys.exit(0)
-    interval = float(argv.interval)
-
+    # interval = float(argv.interval)
+    filename = argv.file_name
     if argv.dump_system:
-        sm = SystemMonitor(dump=argv.dump)
+        sm = SystemMonitor(dump=argv.dump, fname=filename)
         sm.start(interval)
     else:
-        pm = ProcessMonitor(pids=argv.pid, pattern=argv.name, dump=argv.dump)
+        pm = ProcessMonitor(pids=argv.pid, pattern=argv.name, dump=argv.dump, fname=filename)
         pm.start(interval)
 
     
