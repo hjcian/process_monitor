@@ -98,7 +98,9 @@ class ProcessMonitor(object):
         if not pids: 
             raise KeyError("not match any process name by given '{}'".format(pattern))
         
-        self.procs = [ psutil.Process(pid) for pid in pids ]
+        selfPID = os.getpid()
+        print("selfPID: ", selfPID)
+        self.procs = [ psutil.Process(pid) for pid in pids if pid != selfPID ]
 
         filename_concate = []        
         for idx, p in enumerate(self.procs):            
@@ -144,7 +146,6 @@ class ProcessMonitor(object):
 
 
 if __name__ == "__main__":
-    interval = 1.0
     parser = ArgumentParser(prog=str(__file__))
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--name', '-n', dest='name', help='Process name for binding after searching.')
@@ -156,10 +157,10 @@ if __name__ == "__main__":
         help='dump metrics to file or not. default: false')
     parser.add_argument('--file-name', '-f', 
         help='specify file name for storing dump file or use default syntax.')
+    parser.add_argument('--interval', '-i', dest='interval', default=1, help='Monitor interval. default: 1 sec.', type=int)
     argv = parser.parse_args()
-    # print(argv)
-    # sys.exit(0)
-    # interval = float(argv.interval)
+
+    interval = float(argv.interval)
     filename = argv.file_name
     if argv.dump_system:
         sm = SystemMonitor(dump=argv.dump, fname=filename)
@@ -167,9 +168,3 @@ if __name__ == "__main__":
     else:
         pm = ProcessMonitor(pids=argv.pid, pattern=argv.name, dump=argv.dump, fname=filename)
         pm.start(interval)
-
-    
-
-
-    
-            
